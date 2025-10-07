@@ -49,6 +49,10 @@ class PDFtoMarkdownConverter:
         # 检测GPU设备
         self.device_info = self._detect_device()
 
+        # 性能优化选项
+        self.use_ocr = tk.BooleanVar(value=False)  # 默认不使用OCR (快速模式)
+        self.high_quality_mode = tk.BooleanVar(value=False)  # 高质量模式
+
         self.setup_ui()
 
     def _detect_device(self):
@@ -103,15 +107,21 @@ class PDFtoMarkdownConverter:
         # 顶部工具栏
         toolbar = ttk.Frame(self.root)
         toolbar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Button(toolbar, text="选择PDF文件", command=self.select_pdf).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="开始转换", command=self.convert_pdf).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="导出Markdown", command=self.export_markdown).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="导出Word", command=self.export_word).pack(side=tk.LEFT, padx=5)
 
-        self.status_label = ttk.Label(toolbar, text=f"请选择PDF文件 | 设备: {self.device_info['name']}")
+        # 性能选项
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=10, fill=tk.Y)
+        ttk.Checkbutton(toolbar, text="使用OCR (慢)", variable=self.use_ocr,
+                       command=self._update_mode_tooltip).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(toolbar, text="高质量模式", variable=self.high_quality_mode).pack(side=tk.LEFT, padx=5)
+
+        self.status_label = ttk.Label(toolbar, text=f"请选择PDF文件 | 设备: {self.device_info['name']} | 模式: 快速")
         self.status_label.pack(side=tk.LEFT, padx=20)
-        
+
         # 进度条
         self.progress = ttk.Progressbar(toolbar, mode='indeterminate', length=200)
         self.progress.pack(side=tk.RIGHT, padx=5)
@@ -152,16 +162,25 @@ class PDFtoMarkdownConverter:
         self.page_entry.pack(side=tk.LEFT, padx=5)
         ttk.Button(nav_frame, text="跳转", command=self.jump_to_page).pack(side=tk.LEFT, padx=5)
         
+    def _update_mode_tooltip(self):
+        """更新模式提示"""
+        mode = "OCR模式 (慢但适合扫描PDF)" if self.use_ocr.get() else "快速模式 (使用PDF文本)"
+        current_text = self.status_label.cget("text")
+        parts = current_text.split("|")
+        if len(parts) >= 2:
+            self.status_label.config(text=f"{parts[0]}| {parts[1]}| 模式: {mode}")
+
     def select_pdf(self):
         """选择PDF文件"""
         file_path = filedialog.askopenfilename(
             title="选择PDF文件",
             filetypes=[("PDF文件", "*.pdf"), ("所有文件", "*.*")]
         )
-        
+
         if file_path:
             self.pdf_path = file_path
-            self.status_label.config(text=f"已选择: {os.path.basename(file_path)}")
+            mode = "OCR" if self.use_ocr.get() else "快速"
+            self.status_label.config(text=f"已选择: {os.path.basename(file_path)} | 设备: {self.device_info['name']} | 模式: {mode}")
             self.load_pdf_preview()
             
     def load_pdf_preview(self):
@@ -306,7 +325,49 @@ class PDFtoMarkdownConverter:
             print(f"模型缓存目录: {self.models_dir}")
             artifact_dict = create_model_dict()
 
-            config = ConfigParser({})
+            # 性能优化配置
+            use_ocr = self.use_ocr.get()
+            high_quality = self.high_quality_mode.get()
+
+            print(f"\n{'='*50}")
+            print(f"转换模式配置:")
+            print(f"  OCR模式: {'启用' if use_ocr else '禁用 (快速模式)'}")
+            print(f"  高质量模式: {'启用' if high_quality else '禁用'}")
+            print(f"{'='*50}\n")
+
+            # 根据用户选择配置性能参数
+            if use_ocr:
+                # OCR模式 - 适合扫描PDF，速度较慢
+                if high_quality:
+                    # 高质量OCR模式
+                    config_dict = {
+                        "force_ocr": True,              # 强制使用OCR
+                        "recognition_batch_size": 64,    # 适中的批次大小
+                        "detection_batch_size": 10,
+                        "disable_multiprocessing": True,
+                    }
+                    print("使用高质量OCR模式 (速度慢，质量高)")
+                else:
+                    # 快速OCR模式
+                    config_dict = {
+                        "force_ocr": True,              # 强制使用OCR
+                        "recognition_batch_size": 128,   # 大批次提速
+                        "detection_batch_size": 16,
+                        "ocr_error_batch_size": 28,
+                        "disable_ocr_math": True,       # 禁用数学符号识别加速
+                        "disable_multiprocessing": True,
+                    }
+                    print("使用快速OCR模式 (速度中等，适合扫描PDF)")
+            else:
+                # 快速模式 - 使用PDF文本，不用OCR (推荐)
+                config_dict = {
+                    "disable_ocr": True,            # 禁用OCR，只用PDF文本
+                    "pdftext_workers": 8,           # 并行提取文本
+                    "disable_multiprocessing": True,
+                }
+                print("使用快速模式 (仅提取PDF文本，速度最快)")
+
+            config = ConfigParser(config_dict)
             converter = PdfConverter(
                 artifact_dict=artifact_dict,
                 config=config.generate_config_dict()

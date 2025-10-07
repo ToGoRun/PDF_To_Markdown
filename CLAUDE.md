@@ -21,7 +21,13 @@ PDF to Markdown converter with GUI preview, powered by marker-pdf library. Conve
 
 **Model Caching**: Models downloaded to `./models/` directory with environment variables set for HuggingFace and PyTorch caches ([PDF_Change.py:280](PDF_Change.py#L280-286))
 
-**GPU Acceleration**: Uses TORCH_DEVICE environment variable to route processing to CUDA when available ([PDF_Change.py:286](PDF_Change.py#L286))
+**GPU Acceleration**: Uses TORCH_DEVICE environment variable to route processing to CUDA when available ([PDF_Change.py:271](PDF_Change.py#L271))
+
+**Performance Modes** ([PDF_Change.py:328-374](PDF_Change.py#L328-374)):
+- **Fast Mode (default)**: Uses `disable_ocr=True` to extract embedded PDF text only (~30 seconds typical)
+- **OCR Mode**: Enables OCR for scanned PDFs with `force_ocr=True` and optimized batch sizes
+- **High Quality Mode**: Uses smaller batch sizes for better accuracy
+- User toggles via checkboxes in toolbar ([PDF_Change.py:118-120](PDF_Change.py#L118-120))
 
 **Image Handling**:
 - Images extracted as base64/bytes from marker output

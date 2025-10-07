@@ -1,0 +1,5 @@
+marker-pdf
+PyMuPDF
+Pillow
+python-docx
+pypandoc
